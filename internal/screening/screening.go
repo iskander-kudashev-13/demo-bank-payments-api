@@ -17,9 +17,10 @@ import (
 // Suspected evidence never blocks, it only raises the risk score.
 // Owned by the bank's Fraud Risk team; new kinds are proposed in a PR.
 var Policy = map[string]string{
-	"bec_beneficiary":      ActionReview,
-	"app_scam_beneficiary": ActionReview,
-	"mule_account":         ActionReview,
+	"bec_beneficiary":       ActionReview,
+	"app_scam_beneficiary":  ActionReview,
+	"mule_account":          ActionReview,
+	"crypto_offramp_wallet": ActionReview,
 }
 
 const (
@@ -64,10 +65,37 @@ func (e *Engine) Apply(s signals.Signal) string {
 	return "applied"
 }
 
+// matchable lists the indicator types this bank can compute from a payment.
+var matchable = map[string]bool{
+	signals.AccountHMAC: true,
+	signals.WalletHMAC:  true,
+}
+
 // Supported reports whether this bank can match a signal kind to payments.
 func Supported(s signals.Signal) bool {
 	_, ok := Policy[s.Kind]
-	return ok && s.Indicator.Type == signals.AccountHMAC
+	return ok && matchable[s.Indicator.Type]
+}
+
+// indicators computes every indicator this bank can derive from a payment.
+func (e *Engine) indicators(p payments.Payment) []signals.Indicator {
+	var out []signals.Indicator
+	if p.Creditor.IBAN != "" {
+		out = append(out, signals.AccountIndicator(e.groupKey, p.Creditor.IBAN))
+	}
+	if p.Creditor.VASP != nil && signals.NormalizeWallet(p.Creditor.VASP.Wallet) != "" {
+		out = append(out, signals.WalletIndicator(e.groupKey, p.Creditor.VASP.Wallet))
+	}
+	return out
+}
+
+func matches(s signals.Signal, inds []signals.Indicator) bool {
+	for _, i := range inds {
+		if s.Indicator == i {
+			return true
+		}
+	}
+	return false
 }
 
 // Screen checks one payment.
@@ -77,11 +105,7 @@ func (e *Engine) Screen(p payments.Payment) Decision {
 	now := e.now()
 	d := Decision{PaymentID: p.ID, Decision: ActionApprove, Reason: "no active warning for this payee"}
 	unchecked := map[string]bool{}
-	var ind *signals.Indicator
-	if p.Creditor.IBAN != "" {
-		i := signals.AccountIndicator(e.groupKey, p.Creditor.IBAN)
-		ind = &i
-	}
+	inds := e.indicators(p)
 	for _, s := range e.sorted() {
 		if !s.Active(now) {
 			continue
@@ -90,7 +114,7 @@ func (e *Engine) Screen(p payments.Payment) Decision {
 			unchecked[s.Kind] = true
 			continue
 		}
-		if ind != nil && s.Indicator == *ind && s.EvidenceLevel == "issuer_analyst_verified" {
+		if matches(s, inds) && s.EvidenceLevel == "issuer_analyst_verified" {
 			d.Decision, d.SignalID = Policy[s.Kind], s.ID
 			d.Reason = fmt.Sprintf("%s reported this payee (%s, %s, %d related cases)", s.Issuer, s.Kind, s.ReasonCode, s.CaseCount)
 			return d
