@@ -5,6 +5,7 @@ package screening
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -20,6 +21,13 @@ var Policy = map[string]string{
 	"bec_beneficiary":      ActionReview,
 	"app_scam_beneficiary": ActionReview,
 	"mule_account":         ActionReview,
+	"aani_proxy_scam":      ActionReview,
+}
+
+// matchable is the set of indicator types this bank can compute from a payment.
+var matchable = map[string]bool{
+	signals.AccountHMAC: true,
+	signals.PhoneHMAC:   true,
 }
 
 const (
@@ -67,7 +75,19 @@ func (e *Engine) Apply(s signals.Signal) string {
 // Supported reports whether this bank can match a signal kind to payments.
 func Supported(s signals.Signal) bool {
 	_, ok := Policy[s.Kind]
-	return ok && s.Indicator.Type == signals.AccountHMAC
+	return ok && matchable[s.Indicator.Type]
+}
+
+// indicators computes every indicator this bank can derive from a payment.
+func (e *Engine) indicators(p payments.Payment) []signals.Indicator {
+	var out []signals.Indicator
+	if p.Creditor.IBAN != "" {
+		out = append(out, signals.AccountIndicator(e.groupKey, p.Creditor.IBAN))
+	}
+	if p.Creditor.Proxy != nil && p.Creditor.Proxy.Mobile != "" {
+		out = append(out, signals.PhoneIndicator(e.groupKey, p.Creditor.Proxy.Mobile))
+	}
+	return out
 }
 
 // Screen checks one payment.
@@ -77,11 +97,7 @@ func (e *Engine) Screen(p payments.Payment) Decision {
 	now := e.now()
 	d := Decision{PaymentID: p.ID, Decision: ActionApprove, Reason: "no active warning for this payee"}
 	unchecked := map[string]bool{}
-	var ind *signals.Indicator
-	if p.Creditor.IBAN != "" {
-		i := signals.AccountIndicator(e.groupKey, p.Creditor.IBAN)
-		ind = &i
-	}
+	inds := e.indicators(p)
 	for _, s := range e.sorted() {
 		if !s.Active(now) {
 			continue
@@ -90,7 +106,7 @@ func (e *Engine) Screen(p payments.Payment) Decision {
 			unchecked[s.Kind] = true
 			continue
 		}
-		if ind != nil && s.Indicator == *ind && s.EvidenceLevel == "issuer_analyst_verified" {
+		if slices.Contains(inds, s.Indicator) && s.EvidenceLevel == "issuer_analyst_verified" {
 			d.Decision, d.SignalID = Policy[s.Kind], s.ID
 			d.Reason = fmt.Sprintf("%s reported this payee (%s, %s, %d related cases)", s.Issuer, s.Kind, s.ReasonCode, s.CaseCount)
 			return d
