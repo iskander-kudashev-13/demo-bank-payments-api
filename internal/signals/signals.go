@@ -11,7 +11,8 @@ import (
 )
 
 // Indicator types defined by the network schema. This bank only knows how to
-// compute AccountHMAC today; the others are received but cannot be matched.
+// compute AccountHMAC and WalletHMAC today; the others are received but cannot
+// be matched.
 const (
 	AccountHMAC = "account_hmac" // HMAC of a normalised IBAN
 	PhoneHMAC   = "phone_hmac"   // HMAC of an E.164 mobile number (Aani alias payments)
@@ -51,6 +52,16 @@ func NormalizeIBAN(iban string) string {
 // AccountIndicator is HMAC-SHA256(groupKey, normalised IBAN), hex encoded.
 func AccountIndicator(groupKey []byte, iban string) Indicator {
 	return Indicator{Type: AccountHMAC, Value: hmacHex(groupKey, NormalizeIBAN(iban))}
+}
+
+// NormalizeWallet lower-cases a crypto wallet address and removes all whitespace.
+func NormalizeWallet(addr string) string {
+	return strings.ToLower(strings.Join(strings.Fields(addr), ""))
+}
+
+// WalletIndicator is HMAC-SHA256(groupKey, normalised wallet address), hex encoded.
+func WalletIndicator(groupKey []byte, addr string) Indicator {
+	return Indicator{Type: WalletHMAC, Value: hmacHex(groupKey, NormalizeWallet(addr))}
 }
 
 func hmacHex(key []byte, s string) string {
