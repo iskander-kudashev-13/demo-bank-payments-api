@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// Indicator types defined by the network schema. This bank only knows how to
-// compute AccountHMAC today; the others are received but cannot be matched.
+// Indicator types defined by the network schema. This bank computes
+// AccountHMAC and PhoneHMAC; the others are received but cannot be matched.
 const (
 	AccountHMAC = "account_hmac" // HMAC of a normalised IBAN
 	PhoneHMAC   = "phone_hmac"   // HMAC of an E.164 mobile number (Aani alias payments)
@@ -51,6 +51,25 @@ func NormalizeIBAN(iban string) string {
 // AccountIndicator is HMAC-SHA256(groupKey, normalised IBAN), hex encoded.
 func AccountIndicator(groupKey []byte, iban string) Indicator {
 	return Indicator{Type: AccountHMAC, Value: hmacHex(groupKey, NormalizeIBAN(iban))}
+}
+
+// NormalizeUAEMobile returns a UAE mobile number in E.164 form
+// (+971501234567): spaces and dashes are stripped, a leading 00 becomes +
+// and a local 05 prefix becomes +9715.
+func NormalizeUAEMobile(mobile string) string {
+	m := strings.NewReplacer(" ", "", "-", "").Replace(strings.TrimSpace(mobile))
+	switch {
+	case strings.HasPrefix(m, "00"):
+		m = "+" + m[2:]
+	case strings.HasPrefix(m, "05"):
+		m = "+9715" + m[2:]
+	}
+	return m
+}
+
+// PhoneIndicator is HMAC-SHA256(groupKey, E.164 UAE mobile number), hex encoded.
+func PhoneIndicator(groupKey []byte, mobile string) Indicator {
+	return Indicator{Type: PhoneHMAC, Value: hmacHex(groupKey, NormalizeUAEMobile(mobile))}
 }
 
 func hmacHex(key []byte, s string) string {
