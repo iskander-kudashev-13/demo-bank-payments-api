@@ -22,12 +22,14 @@ var Policy = map[string]string{
 	"app_scam_beneficiary": ActionReview,
 	"mule_account":         ActionReview,
 	"aani_proxy_scam":      ActionReview,
+	"ato_device":           ActionReview,
 }
 
 // matchable is the set of indicator types this bank can compute from a payment.
 var matchable = map[string]bool{
 	signals.AccountHMAC: true,
 	signals.PhoneHMAC:   true,
+	signals.DeviceHMAC:  true,
 }
 
 const (
@@ -87,6 +89,9 @@ func (e *Engine) indicators(p payments.Payment) []signals.Indicator {
 	if p.Creditor.Proxy != nil && p.Creditor.Proxy.Mobile != "" {
 		out = append(out, signals.PhoneIndicator(e.groupKey, p.Creditor.Proxy.Mobile))
 	}
+	if p.Channel.DeviceID != "" {
+		out = append(out, signals.DeviceIndicator(e.groupKey, p.Channel.DeviceID))
+	}
 	return out
 }
 
@@ -108,7 +113,11 @@ func (e *Engine) Screen(p payments.Payment) Decision {
 		}
 		if slices.Contains(inds, s.Indicator) && s.EvidenceLevel == "issuer_analyst_verified" {
 			d.Decision, d.SignalID = Policy[s.Kind], s.ID
-			d.Reason = fmt.Sprintf("%s reported this payee (%s, %s, %d related cases)", s.Issuer, s.Kind, s.ReasonCode, s.CaseCount)
+			subject := "payee"
+			if s.Indicator.Type == signals.DeviceHMAC {
+				subject = "payer's device"
+			}
+			d.Reason = fmt.Sprintf("%s reported this %s (%s, %s, %d related cases)", s.Issuer, subject, s.Kind, s.ReasonCode, s.CaseCount)
 			return d
 		}
 	}
