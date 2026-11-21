@@ -28,14 +28,14 @@ The network carries several fraud signal kinds. This bank covers only some of th
 | `mule_account` | Account receiving and forwarding scam proceeds | `account_hmac` (IBAN) | covered |
 | `aani_proxy_scam` | Scam payee on an Aani mobile-number alias | `phone_hmac` (E.164 UAE mobile) | covered |
 | `crypto_offramp_wallet` | Proceeds cashed out to a crypto wallet via a VASP | `wallet_hmac` | **not covered** |
-| `ato_device` | Device seen in confirmed account takeovers | `device_hmac` | **not covered** |
+| `ato_device` | Device seen in confirmed account takeovers | `device_hmac` (payer's mobile banking device fingerprint, `channel.device_id`) | covered |
 
 Uncovered signals are stored and reported in `Decision.unchecked_kinds`, so the fraud desk knows which payments could not be fully checked.
 
 ## Layout
 
 ```
-internal/signals    signal model, IBAN and UAE mobile normalisation, indicator HMAC
+internal/signals    signal model, IBAN, UAE mobile and device ID normalisation, indicator HMAC
 internal/payments   the bank's outgoing payment format and parser
 internal/screening  signal store, matching and the bank's policy
 cmd/api             HTTP API

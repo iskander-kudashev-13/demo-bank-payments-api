@@ -11,7 +11,8 @@ import (
 )
 
 // Indicator types defined by the network schema. This bank computes
-// AccountHMAC and PhoneHMAC; the others are received but cannot be matched.
+// AccountHMAC, PhoneHMAC and DeviceHMAC; the others are received but cannot
+// be matched.
 const (
 	AccountHMAC = "account_hmac" // HMAC of a normalised IBAN
 	PhoneHMAC   = "phone_hmac"   // HMAC of an E.164 mobile number (Aani alias payments)
@@ -70,6 +71,18 @@ func NormalizeUAEMobile(mobile string) string {
 // PhoneIndicator is HMAC-SHA256(groupKey, E.164 UAE mobile number), hex encoded.
 func PhoneIndicator(groupKey []byte, mobile string) Indicator {
 	return Indicator{Type: PhoneHMAC, Value: hmacHex(groupKey, NormalizeUAEMobile(mobile))}
+}
+
+// NormalizeDeviceID returns a mobile banking SDK device fingerprint hash as
+// lower-case hex: surrounding whitespace is trimmed and spaces, dashes and
+// colons used as separators are stripped.
+func NormalizeDeviceID(id string) string {
+	return strings.ToLower(strings.NewReplacer(" ", "", "-", "", ":", "").Replace(strings.TrimSpace(id)))
+}
+
+// DeviceIndicator is HMAC-SHA256(groupKey, lower-case hex device fingerprint hash), hex encoded.
+func DeviceIndicator(groupKey []byte, deviceID string) Indicator {
+	return Indicator{Type: DeviceHMAC, Value: hmacHex(groupKey, NormalizeDeviceID(deviceID))}
 }
 
 func hmacHex(key []byte, s string) string {
